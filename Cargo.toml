@@ -6,4 +6,8 @@ edition = "2024"
 [profile.release]
 opt-level = 3
 
+[lib]
+name = "fat32rs"
+path = "src/lib.rs"
+
 [dependencies]
