@@ -126,3 +126,57 @@ impl<D: DeviceBlock> Fat32<D> {
             + cluster_index * self.boot.sectors_per_cluster as u64
     }
 }
+
+impl<D: DeviceBlock> Fat32<D> {
+    pub fn read_fat_entry(&self, cluster: u32) -> Result<u32, DeviceError> {
+        let fat_offset = cluster as u64 * 4;
+        let sector = self.first_fat_sector
+            + fat_offset / self.boot.bytes_per_sector as u64;
+        let offset = (fat_offset % self.boot.bytes_per_sector as u64) as usize;
+
+        let mut buf = [0u8; 512];
+        self.device.read(sector, &mut buf)?;
+
+        let entry = u32::from_le_bytes([
+            buf[offset],
+            buf[offset + 1],
+            buf[offset + 2],
+            buf[offset + 3],
+        ]) & 0x0FFFFFFF;
+
+        Ok(entry)
+    }
+}
+
+fn is_end_of_chain(value: u32) -> bool {
+    value >= 0x0FFFFFF8
+}
+
+impl<D: DeviceBlock> Fat32<D> {
+    pub fn cluster_chain(
+        &self,
+        start: u32,
+        out: &mut [u32],
+    ) -> Result<usize, DeviceError> {
+        let mut current = start;
+        let mut count = 0;
+
+        loop {
+            if count >= out.len() {
+                break;
+            }
+
+            out[count] = current;
+            count += 1;
+
+            let next = self.read_fat_entry(current)?;
+            if is_end_of_chain(next) {
+                break;
+            }
+
+            current = next;
+        }
+
+        Ok(count)
+    }
+}
