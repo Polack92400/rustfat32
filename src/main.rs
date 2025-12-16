@@ -1,18 +1,22 @@
 use fat32rs::*;
 
-pub fn say_hello() {
-    println!("Hello, world!");
-}
-
-#[test]
-fn it_runs() {
-    say_hello();
-    assert_eq!(true, true);
-}
-
 fn main() {
-    let img = std::fs::read("image/fat32.img").unwrap();
-    let disk = fat32rs::RamDisk::new(&img, 512);
-    let mut buf = [0u8; 512];
-    disk.read(0, &mut buf).expect("read failed");
+    // 1. Load disk image (std only)
+    let img = std::fs::read("image/fat32.img")
+        .expect("failed to read fat32 image");
+
+    // 2. Wrap it in a block device
+    let disk = RamDisk::new(&img, 512);
+
+    // 3. Mount the filesystem
+    let mut fs = Fs::new(disk)
+        .expect("failed to mount FAT32");
+
+    // 4. Demo navigation
+    println!("Mounted FAT32 filesystem");
+
+    // Example: cd into a directory
+    fs.cd("TEST").expect("cd failed");
+
+    println!("Changed directory to TEST");
 }

@@ -277,3 +277,65 @@ impl<D: DeviceBlock> Fat32<D> {
         Ok(entry_count)
     }
 }
+
+
+pub struct Fs<D: DeviceBlock> {
+    fat: Fat32<D>,
+    cwd_cluster: u32,
+}
+
+impl<D: DeviceBlock> Fs<D> {
+    pub fn new(device: D) -> Result<Self, DeviceError> {
+        let fat = Fat32::new(device)?;
+        let root = fat.boot.root_cluster;
+
+        Ok(Self {
+            fat,
+            cwd_cluster: root,
+        })
+    }
+}
+
+
+
+impl DirEntry {
+    pub fn matches_name(&self, name: &str) -> bool {
+        let mut fat_name = [b' '; 11];
+        let bytes = name.as_bytes();
+
+        let mut i = 0;
+        for &b in bytes {
+            if i >= 11 {
+                break;
+            }
+            fat_name[i] = b.to_ascii_uppercase();
+            i += 1;
+        }
+
+        self.name == fat_name
+    }
+}
+
+impl<D: DeviceBlock> Fs<D> {
+    pub fn cd(&mut self, name: &str) -> Result<(), DeviceError> {
+        let mut entries = [DirEntry {
+            name: [0; 11],
+            attr: 0,
+            first_cluster: 0,
+            size: 0,
+        }; 64];
+
+        let count = self
+            .fat
+            .read_directory_cluster(self.cwd_cluster, &mut entries)?;
+
+        for entry in &entries[..count] {
+            if entry.is_directory() && entry.matches_name(name) {
+                self.cwd_cluster = entry.first_cluster;
+                return Ok(());
+            }
+        }
+
+        Err(DeviceError::ReadFailed)
+    }
+}
