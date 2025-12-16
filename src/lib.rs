@@ -93,3 +93,36 @@ impl BootSector {
         })
     }
 }
+
+pub struct Fat32<D: DeviceBlock> {
+    device: D,
+    boot: BootSector,
+    first_fat_sector: u64,
+    first_data_sector: u64,
+}
+
+impl<D: DeviceBlock> Fat32<D> {
+    pub fn new(device: D) -> Result<Self, DeviceError> {
+        let boot = BootSector::read_from(&device)?;
+
+        let first_fat_sector = boot.reserved_sectors as u64;
+
+        let first_data_sector =
+            first_fat_sector + (boot.fat_count as u64 * boot.fat_size_sectors as u64);
+
+        Ok(Self {
+            device,
+            boot,
+            first_fat_sector,
+            first_data_sector,
+        })
+    }
+}
+
+impl<D: DeviceBlock> Fat32<D> {
+    pub fn cluster_to_sector(&self, cluster: u32) -> u64 {
+        let cluster_index = (cluster - 2) as u64;
+        self.first_data_sector
+            + cluster_index * self.boot.sectors_per_cluster as u64
+    }
+}
