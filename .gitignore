@@ -24,3 +24,5 @@ target
 # Added by cargo
 
 /target
+
+/image/fat32.img

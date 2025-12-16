@@ -180,3 +180,100 @@ impl<D: DeviceBlock> Fat32<D> {
         Ok(count)
     }
 }
+
+#[derive(Debug, Clone, Copy)]
+pub struct DirEntry {
+    pub name: [u8; 11],
+    pub attr: u8,
+    pub first_cluster: u32,
+    pub size: u32,
+}
+
+impl DirEntry {
+    pub fn is_directory(&self) -> bool {
+        self.attr & 0x10 != 0
+    }
+
+    pub fn is_file(&self) -> bool {
+        self.attr & 0x20 != 0
+    }
+}
+
+impl DirEntry {
+    pub fn from_bytes(bytes: &[u8]) -> Option<Self> {
+        if bytes.len() != 32 {
+            return None;
+        }
+
+        let first_byte = bytes[0];
+
+        // 0x00 = end of directory
+        // 0xE5 = deleted entry
+        if first_byte == 0x00 || first_byte == 0xE5 {
+            return None;
+        }
+
+        let attr = bytes[0x0B];
+
+        // Skip long filename entries
+        if attr == 0x0F {
+            return None;
+        }
+
+        let mut name = [0u8; 11];
+        name.copy_from_slice(&bytes[0..11]);
+
+        let cluster_high = u16::from_le_bytes([bytes[0x14], bytes[0x15]]) as u32;
+        let cluster_low = u16::from_le_bytes([bytes[0x1A], bytes[0x1B]]) as u32;
+        let first_cluster = (cluster_high << 16) | cluster_low;
+
+        let size = u32::from_le_bytes([
+            bytes[0x1C],
+            bytes[0x1D],
+            bytes[0x1E],
+            bytes[0x1F],
+        ]);
+
+        Some(Self {
+            name,
+            attr,
+            first_cluster,
+            size,
+        })
+    }
+}
+
+impl<D: DeviceBlock> Fat32<D> {
+    pub fn read_directory_cluster(
+        &self,
+        cluster: u32,
+        out: &mut [DirEntry],
+    ) -> Result<usize, DeviceError> {
+        let first_sector = self.cluster_to_sector(cluster);
+        let mut entry_count = 0;
+
+        let mut sector_buf = [0u8; 512];
+
+        for i in 0..self.boot.sectors_per_cluster {
+            let sector = first_sector + i as u64;
+            self.device.read(sector, &mut sector_buf)?;
+
+            let mut offset = 0;
+            while offset < 512 {
+                if entry_count >= out.len() {
+                    return Ok(entry_count);
+                }
+
+                let entry_bytes = &sector_buf[offset..offset + 32];
+                if let Some(entry) = DirEntry::from_bytes(entry_bytes) {
+                    out[entry_count] = entry;
+                    entry_count += 1;
+                }
+
+                offset += 32;
+            }
+        }
+
+        Ok(entry_count)
+    }
+}
